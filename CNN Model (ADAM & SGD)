@@ -1,0 +1,167 @@
+### **ARAIP Final Project Report (CNN Model - ADAM & SGD)**
+
+# Import libraries
+import os  # For file path operations
+import tensorflow as tf  # TensorFlow for deep learning
+from tensorflow.keras import datasets, layers, models  # Keras modules for model building and data
+from tensorflow.keras.preprocessing.image import ImageDataGenerator, load_img, img_to_array  # For data augmentation and image loading
+from tensorflow.keras.callbacks import ReduceLROnPlateau  # Callback to reduce learning rate on plateau
+import matplotlib.pyplot as plt  # For plotting graphs and images
+import numpy as np  # For numerical operations
+
+# File to save the chosen best model
+default_model_path = 'best_cifar10_model.h5'
+
+# Load and preprocess the CIFAR-10 dataset
+(train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
+train_images, test_images = train_images / 255.0, test_images / 255.0  # Normalize pixel values to [0,1]
+
+# Define class names for CIFAR-10 labels
+class_names = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
+
+# Data augmentation to reduce overfitting
+datagen = ImageDataGenerator(rotation_range=15,        # Randomly rotate images up to 15 degrees
+                              width_shift_range=0.1,   # Randomly shift horizontally by up to 10%
+                              height_shift_range=0.1,  # Randomly shift vertically by up to 10%
+                              horizontal_flip=True)    # Randomly flip horizontally
+
+# Callback: reduce learning rate when a metric has stopped improving
+lr_reduction = ReduceLROnPlateau(monitor='val_loss',  # Monitor validation loss
+                                 patience=3,          # Number of epochs with no improvement before reducing
+                                 factor=0.5,          # Factor by which the learning rate will be reduced
+                                 verbose=1)           # Verbosity mode
+
+# Function to build a CNN model
+def create_model(optimizer, name):
+    model = models.Sequential(name=name)  # Initialize a sequential model
+    # Convo block 1
+    model.add(layers.Conv2D(64, (3, 3), activation='relu', padding='same', input_shape=(32, 32, 3)))  # 64 filters, 3x3 kernel   # Input layer
+    model.add(layers.BatchNormalization())  # Normalize activations to speed convergence
+    model.add(layers.Conv2D(64, (3, 3), activation='relu', padding='same')) # Conv layer
+    model.add(layers.BatchNormalization())  # Batch norm
+    model.add(layers.MaxPooling2D((2, 2)))  # Downsample
+    model.add(layers.Dropout(0.25))         # Dropout to prevent overfitting
+    # Convo block 2
+    model.add(layers.Conv2D(128, (3, 3), activation='relu', padding='same'))
+    model.add(layers.BatchNormalization())
+    model.add(layers.Conv2D(128, (3, 3), activation='relu', padding='same'))
+    model.add(layers.BatchNormalization())
+    model.add(layers.MaxPooling2D((2, 2)))
+    model.add(layers.Dropout(0.25))
+    # Convo block 3
+    model.add(layers.Conv2D(256, (3, 3), activation='relu', padding='same'))
+    model.add(layers.BatchNormalization())
+    model.add(layers.Conv2D(256, (3, 3), activation='relu', padding='same'))
+    model.add(layers.BatchNormalization())
+    model.add(layers.MaxPooling2D((2, 2)))
+    model.add(layers.Dropout(0.5))
+    # Fully connected layers
+    model.add(layers.Flatten())             # Flatten 3D feature maps to 1D feature vector
+    model.add(layers.Dense(512, activation='relu'))  # Dense layer
+    model.add(layers.BatchNormalization())
+    model.add(layers.Dropout(0.5))
+    model.add(layers.Dense(10))             # Output layer for 10 classes
+
+    # Compile model with specified optimizer and loss
+    model.compile(
+        optimizer=optimizer,  # Optimizer passed into function (SGD or Adam)
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),  # Loss for one-hot encoded labels with logits
+        metrics=['accuracy']  # Track accuracy during training
+    )
+    return model  # Return the compiled model
+
+# Train both models from scratch
+# 1. SGD Model
+sgd_model = create_model(tf.keras.optimizers.SGD(0.01, momentum=0.9), 'SGD_Model')
+print("\nSGD_Model architecture summary:")
+sgd_model.summary()  # Print model layers and parameters
+print("\nTraining with SGD optimizer...")
+history_sgd = sgd_model.fit(   # Train SGD model
+    datagen.flow(train_images, train_labels, batch_size=64),  # Augmented data generator
+    epochs=30,                                                # Number of epochs
+    validation_data=(test_images, test_labels),               # Validation set
+    callbacks=[lr_reduction],                                 # Learning rate reduction
+    verbose=2                                                 # Progress verbosity
+)
+# Evaluate SGD model
+loss_sgd, acc_sgd = sgd_model.evaluate(test_images, test_labels, verbose=2)  # Test accuracy
+print(f"SGD Test Accuracy: {acc_sgd:.4f}\n")
+
+# 2. Adam Model
+adam_model = create_model(tf.keras.optimizers.Adam(learning_rate=0.001), 'Adam_Model')
+print("\nAdam_Model architecture summary:")
+adam_model.summary()
+print("\nTraining with Adam optimizer...")
+history_adam = adam_model.fit(
+    datagen.flow(train_images, train_labels, batch_size=64),
+    epochs=30,
+    validation_data=(test_images, test_labels),
+    callbacks=[lr_reduction],
+    verbose=2
+)
+# Evaluate Adam model
+loss_adam, acc_adam = adam_model.evaluate(test_images, test_labels, verbose=2)
+print(f"Adam Test Accuracy: {acc_adam:.4f}\n")
+
+# Plot training & validation metrics for both models
+plt.figure(figsize=(14, 5))
+# Accuracy
+plt.subplot(1, 2, 1)
+plt.plot(history_sgd.history['accuracy'], label='SGD Train Acc')
+plt.plot(history_sgd.history['val_accuracy'], label='SGD Val Acc')
+plt.plot(history_adam.history['accuracy'], label='Adam Train Acc')
+plt.plot(history_adam.history['val_accuracy'], label='Adam Val Acc')
+plt.xlabel('Epoch'); plt.ylabel('Accuracy')
+plt.title('Training & Validation Accuracy')
+plt.legend(); plt.grid(True)  # Legend to show the name of line color
+# Loss
+plt.subplot(1, 2, 2)
+plt.plot(history_sgd.history['loss'], label='SGD Train Loss')
+plt.plot(history_sgd.history['val_loss'], label='SGD Val Loss')
+plt.plot(history_adam.history['loss'], label='Adam Train Loss')
+plt.plot(history_adam.history['val_loss'], label='Adam Val Loss')
+plt.xlabel('Epoch'); plt.ylabel('Loss')
+plt.title('Training & Validation Loss')
+plt.legend(); plt.grid(True)
+plt.tight_layout(); plt.show()
+
+# Select the best model based on test accuracy
+if acc_adam >= acc_sgd:
+    best_model = adam_model
+    best_acc = acc_adam
+    print(f"Selected Adam_Model as best with accuracy {acc_adam:.4f}\n")
+else:
+    best_model = sgd_model
+    best_acc = acc_sgd
+    print(f"Selected SGD_Model as best with accuracy {acc_sgd:.4f}\n")
+
+# Display summary of selected best model
+print(f"Best model summary (accuracy {best_acc:.4f}):")
+best_model.summary()
+
+# Save the selected best model to file
+best_model.save(default_model_path)
+print(f"Best model saved to {default_model_path}")
+
+
+# Predict on user-provided images using the selected best_model
+sample_paths = ['Cat.jpg','Dog.jpg','Airplane.jpg','Horse_detected.png']  # Replace with own images in the Colab contents file
+for p in sample_paths:
+    if not os.path.exists(p):          # Check if file exists
+        print(f"File not found: {p}")  # Print if image not in Colab file
+        continue
+    # Load and preprocess image
+    img = load_img(p, target_size=(32, 32))  # Resize to 32x32 pixels (model input size)
+    arr = img_to_array(img) / 255.0          # Normalizes the pizel to [0,1]
+
+    preds = best_model.predict(arr.reshape(1, 32, 32, 3)) # Model inference
+    idx = np.argmax(preds)                                # Class index
+    conf = tf.nn.softmax(preds[0])[idx].numpy() * 100     # From probabilities using Softmax convert to confidence percentange
+
+    plt.imshow(img)  # Display user images
+    plt.title(f"{os.path.basename(p)}")
+    plt.axis('off')
+    plt.show()
+
+    # Print result
+    print(f"{os.path.basename(p)}: {class_names[idx]} ({conf:.2f}%)")  # Prints filename, predicted class with confidence
