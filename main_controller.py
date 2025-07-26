@@ -1,0 +1,59 @@
+""" ARAP Webots main file """
+import robot
+
+def main():
+    # Initialize robot
+    epuck = robot.ARAP()
+    epuck.init_devices()
+
+    # Dictionary to keep track of which colors have ever been seen
+    seen = {
+        "red": False,
+        "green": False,
+        "blue": False
+    }
+
+    while True:
+        # Reset actuators and read sensors
+        epuck.reset_actuator_values()
+        epuck.get_sensor_input()
+        epuck.blink_leds()
+
+        # Get average RGB values from camera
+        avg_red, avg_green, avg_blue = epuck.get_camera_image(5)
+
+        detected_color = None
+
+        # --- Simple Color Detection ---
+        if avg_red > avg_green and avg_red > avg_blue and avg_red > 100:
+            detected_color = "red"
+        elif avg_green > avg_red and avg_green > avg_blue and avg_green > 100:
+            detected_color = "green"
+        elif avg_blue > avg_red and avg_blue > avg_green and avg_blue > 135:
+            detected_color = "blue"  # higher threshold to avoid sky color
+
+        # --- Respond to Detected Color ---
+        if detected_color:
+            print(f"I see {detected_color}")
+
+            # If it is the first time, update history
+            if not seen[detected_color]:
+                seen[detected_color] = True
+
+            # Show a summary of all previously seen colors
+            summary = [color for color, has_been_seen in seen.items() if has_been_seen]
+            print("Previous colors:", ", ".join(summary))
+
+        # --- Movement Logic ---
+        if epuck.front_obstacles_detected():
+            epuck.move_backward()
+            epuck.turn_left()
+        else:
+            epuck.run_braitenberg()
+
+        # Apply motor speeds and LED states
+        epuck.set_actuators()
+        epuck.step()
+
+if __name__ == "__main__":
+    main()
